@@ -1,0 +1,7 @@
+{
+    "pluginchannels": [
+        "https://raw.githubusercontent.com/micro-editor/plugin-channel/master/channel.json",
+        "https://raw.githubusercontent.com/akikareha/micro-unofficial-plugin-channel/master/channel.json"
+    ],
+    "vi.default": true
+}

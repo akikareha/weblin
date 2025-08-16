@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="generator" content=
+"HTML Tidy for HTML5 for Linux version 5.6.0">
+<meta charset="utf-8">
+<style>
+html,body {
+  height:100%;
+  margin:0;
+  background:black;
+}
+#screen {
+  height:100vh;
+}
+</style>
+<title>vi Plugin for micro Text Editor</title>
+</head>
+<body>
+<div id="screen_container">
+<div id="screen" style="overflow:hidden">Initializing..</div>
+<canvas style="display:none"></canvas>
+</div>
+<script src="libv86.js"></script> 
+<script>
+const emu = new V86({
+    bios: { url: "bios/seabios.bin" },
+    vga_bios: { url: "bios/vgabios.bin" },
+    screen_container: document.getElementById("screen_container"),
+    bzimage: { url: "bzImage" },
+    hda: { url: "rootfs.ext2", async: true, use_persistent_storage: true },
+    //network_relay_url: "wss://relay.widgetry.org/",
+    cmdline:  "root=/dev/sda console=tty0",
+    //cmdline:  "root=/dev/sda console=tty0 init=/bin/sh",
+    //cmdline:  "root=/dev/sda console=tty0 init=/usr/bin/micro",
+    autostart: true,
+});
+</script>
+</body>
+</html>

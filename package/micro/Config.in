@@ -1,0 +1,4 @@
+config BR2_PACKAGE_MICRO
+    bool "micro"
+    help
+      A modern and intuitive terminal-based text editor.
