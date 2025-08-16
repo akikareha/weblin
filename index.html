@@ -22,13 +22,16 @@ html,body {
 <canvas style="display:none"></canvas>
 </div>
 <script src="libv86.js"></script> 
-<script>
+<script type="module">
+
+const diskBuf = await fetch(new URL("rootfs.ext2", location.href))
+  .then(r => r.arrayBuffer());
 const emu = new V86({
     bios: { url: "bios/seabios.bin" },
     vga_bios: { url: "bios/vgabios.bin" },
     screen_container: document.getElementById("screen_container"),
     bzimage: { url: "bzImage" },
-    hda: { url: "rootfs.ext2", async: true, use_persistent_storage: true },
+    hda: { buffer: diskBuf, async: true, use_persistent_storage: true },
     //network_relay_url: "wss://relay.widgetry.org/",
     cmdline:  "root=/dev/sda console=tty0",
     //cmdline:  "root=/dev/sda console=tty0 init=/bin/sh",
