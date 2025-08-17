@@ -9,3 +9,8 @@ cp ../v86-releases/v86.wasm build/
 mkdir -p bios
 cp ../v86/bios/seabios.bin bios/
 cp ../v86/bios/vgabios.bin bios/
+
+rm -rf package/micro
+cp -r ../buildroot/package/micro package/
+rm -rf board/myoverlay
+cp -r ../buildroot/board/myoverlay board/
