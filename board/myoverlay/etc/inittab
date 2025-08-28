@@ -40,4 +40,4 @@ null::sysinit:/bin/ln -sf /proc/self/fd/2 /dev/stderr
 ::shutdown:/bin/umount -a -r
 
 # auto login
-tty1::respawn:/sbin/getty -L -n -l /sbin/autologin 115200 tty1 linux
+console::respawn:/sbin/getty -L -n -l /sbin/autologin 115200 ttyS0 linux

@@ -1,28 +1,25 @@
-local M = {}
-
 local micro = import("micro")
 local buffer = import("micro/buffer")
 
 local config = import("micro/config")
-local plug_name = "vi"
-local plug_path = config.ConfigDir .. "/plug/" .. plug_name .. "/?.lua"
+local plug_path = config.ConfigDir .. "/plug/?.lua"
 if not package.path:find(plug_path, 1, true) then
 	package.path = package.path .. ";" .. plug_path
 end
 
-local bell = require("bell")
-local mode = require("mode")
-local prompt = require("prompt")
-local move = require("move")
-local mark = require("mark")
-local view = require("view")
-local search = require("search")
-local find = require("find")
-local insert = require("insert")
-local operator = require("operator")
-local edit = require("edit")
-local misc = require("misc")
-local utils = require("utils")
+local utils = require("vi/utils")
+local bell = require("vi/bell")
+local mode = require("vi/mode")
+local prompt = require("vi/prompt")
+local move = require("vi/move")
+local mark = require("vi/mark")
+local view = require("vi/view")
+local search = require("vi/search")
+local find = require("vi/find")
+local insert = require("vi/insert")
+local operator = require("vi/operator")
+local edit = require("vi/edit")
+local misc = require("vi/misc")
 
 local command_cache = nil
 
@@ -48,10 +45,18 @@ local function get_command_cache()
 		command_cache.subnum,
 		command_cache.mv,
 		command_cache.letter,
-		true
+		true -- replay
 end
 
+-- Note: Declaration is used in repeat_command(). Definition is far below.
+local run
+
 local function repeat_command(num)
+	if num < 1 then
+		bell.program_error("1 > num == " .. num)
+		return
+	end
+
 	mode.show()
 
 	if not command_cache then
@@ -60,11 +65,16 @@ local function repeat_command(num)
 	end
 
 	for _ = 1, num do
-		M.run(get_command_cache())
+		run(get_command_cache())
 	end
 end
 
 local function undo(num, replay)
+	if num < 1 then
+		bell.program_error("1 > num == " .. num)
+		return
+	end
+
 	if utils.xor(undo_mode, replay) then
 		for _ = 1, num do
 			micro.CurPane():Undo()
@@ -80,7 +90,12 @@ local function undo(num, replay)
 	end
 end
 
-local function run_move(no_num, num, mv, letter)
+local function run_move(no_num, num, mv)
+	if num < 1 then
+		bell.program_error("1 > num == " .. num)
+		return
+	end
+
 	-- Move by Character / Move by Line
 	if mv == "h" then
 		move.left(num)
@@ -187,9 +202,20 @@ local function run_move(no_num, num, mv, letter)
 		return true
 	end
 
-	-- XXX could not move to misc
-	-- Move to Mark / Move by Context
-	if mv == "`" and letter then
+	return false
+end
+
+local function run_mark(op, mv, letter)
+	if letter and #letter ~= 1 then
+		bell.program_error("1 ~= #letter == " .. #letter)
+		return
+	end
+
+	-- Set Mark / Move to Mark
+	if op == "m" and letter then
+		mark.set(letter)
+		return true
+	elseif mv == "`" and letter then
 		if letter == "`" then
 			mark.back()
 		else
@@ -225,6 +251,11 @@ local function run_view(op, mv)
 end
 
 local function run_search(mv, num)
+	if num < 1 then
+		bell.program_error("1 > num == " .. num)
+		return
+	end
+
 	if mv == "/\n" then -- not works
 		search.repeat_forward()
 		return true
@@ -249,6 +280,15 @@ local function run_search(mv, num)
 end
 
 local function run_find(mv, num, letter)
+	if num < 1 then
+		bell.program_error("1 > num == " .. num)
+		return
+	end
+	if letter and #letter ~= 1 then
+		bell.program_error("1 ~= #letter == " .. letter)
+		return
+	end
+
 	if mv == "f" and letter then
 		find.forward(num, letter)
 		return true
@@ -273,39 +313,48 @@ local function run_find(mv, num, letter)
 end
 
 local function run_insert(num, op, replay)
+	if num < 1 then
+		bell.program_error("1 > num == " .. num)
+		return
+	end
+
+	-- Enter Insert Mode
 	if op == "i" then
 		insert.before(num, replay)
-		cache_command(false, num, op, true, 1, "", nil, nil)
+		cache_command(false, num, op, true, 1, "", nil)
 		undo_mode = true
 		return true
 	elseif op == "a" then
 		insert.after(num, replay)
-		cache_command(false, num, op, true, 1, "", nil, nil)
+		cache_command(false, num, op, true, 1, "", nil)
 		undo_mode = true
 		return true
 	elseif op == "I" then
 		insert.before_non_blank(num, replay)
-		cache_command(false, num, op, true, 1, "", nil, nil)
+		cache_command(false, num, op, true, 1, "", nil)
 		undo_mode = true
 		return true
 	elseif op == "A" then
 		insert.after_end(num, replay)
-		cache_command(false, num, op, true, 1, "", nil, nil)
+		cache_command(false, num, op, true, 1, "", nil)
 		undo_mode = true
 		return true
 	elseif op == "R" then
 		insert.overwrite(num, replay)
-		cache_command(false, num, op, true, 1, "", nil, nil)
+		cache_command(false, num, op, true, 1, "", nil)
 		undo_mode = true
 		return true
-	elseif op == "o" then
+	end
+
+	-- Open Line
+	if op == "o" then
 		insert.open_below(num, replay)
-		cache_command(false, num, op, true, 1, "", nil, nil)
+		cache_command(false, num, op, true, 1, "", nil)
 		undo_mode = true
 		return true
 	elseif op == "O" then
 		insert.open_above(num, replay)
-		cache_command(false, num, op, true, 1, "", nil, nil)
+		cache_command(false, num, op, true, 1, "", nil)
 		undo_mode = true
 		return true
 	end
@@ -314,20 +363,20 @@ local function run_insert(num, op, replay)
 end
 
 local function run_operator(num, op, replay)
+	if num < 1 then
+		bell.program_error("1 > num == " .. num)
+		return
+	end
+
 	-- Copy (Yank)
-	if op == "yw" then
-		operator.copy_word(num)
-		cache_command(false, num, op, true, 1, "", nil, nil)
-		undo_mode = true
-		return true
-	elseif op == "yy" or op == "Y" then
+	if op == "yy" or op == "Y" then
 		operator.copy_line(num)
-		cache_command(false, num, op, true, 1, "", nil, nil)
+		cache_command(false, num, op, true, 1, "", nil)
 		undo_mode = true
 		return true
 	elseif op == "yy" and false then -- TODO reg
 		operator.copy_line_into_reg(num)
-		cache_command(false, num, op, true, 1, "", nil, nil)
+		cache_command(false, num, op, true, 1, "", nil)
 		undo_mode = true
 		return true
 	end
@@ -335,12 +384,12 @@ local function run_operator(num, op, replay)
 	-- Paste (Put)
 	if op == "p" then
 		operator.paste(num)
-		cache_command(false, num, op, true, 1, "", nil, nil)
+		cache_command(false, num, op, true, 1, "", nil)
 		undo_mode = true
 		return true
 	elseif op == "P" then
 		operator.paste_before(num)
-		cache_command(false, num, op, true, 1, "", nil, nil)
+		cache_command(false, num, op, true, 1, "", nil)
 		undo_mode = true
 		return true
 	end
@@ -348,22 +397,22 @@ local function run_operator(num, op, replay)
 	-- Delete
 	if op == "x" then
 		operator.delete(num)
-		cache_command(false, num, op, true, 1, "", nil, nil)
+		cache_command(false, num, op, true, 1, "", nil)
 		undo_mode = true
 		return true
 	elseif op == "X" then
 		operator.delete_before(num)
-		cache_command(false, num, op, true, 1, "", nil, nil)
+		cache_command(false, num, op, true, 1, "", nil)
 		undo_mode = true
 		return true
 	elseif op == "dd" then
 		operator.delete_line(num)
-		cache_command(false, num, op, true, 1, "", nil, nil)
+		cache_command(false, num, op, true, 1, "", nil)
 		undo_mode = true
 		return true
 	elseif op == "D" then
 		operator.delete_to_end()
-		cache_command(false, 1, op, true, 1, "", nil, nil)
+		cache_command(false, 1, op, true, 1, "", nil)
 		undo_mode = true
 		return true
 	end
@@ -371,22 +420,22 @@ local function run_operator(num, op, replay)
 	-- Change / Substitute
 	if op == "cc" then
 		operator.change_line(num, replay)
-		cache_command(false, num, op, true, 1, "", nil, nil)
+		cache_command(false, num, op, true, 1, "", nil)
 		undo_mode = true
 		return true
 	elseif op == "C" then
 		operator.change_to_end(replay)
-		cache_command(false, num, op, true, 1, "", nil, nil)
+		cache_command(false, num, op, true, 1, "", nil)
 		undo_mode = true
 		return true
 	elseif op == "s" then
 		operator.subst(num, replay)
-		cache_command(false, num, op, true, 1, "", nil, nil)
+		cache_command(false, num, op, true, 1, "", nil)
 		undo_mode = true
 		return true
 	elseif op == "S" then
 		operator.subst_line(num, replay)
-		cache_command(false, num, op, true, 1, "", nil, nil)
+		cache_command(false, num, op, true, 1, "", nil)
 		undo_mode = true
 		return true
 	end
@@ -394,25 +443,34 @@ local function run_operator(num, op, replay)
 	return false
 end
 
-local function run_edit(num, op, letter, replay)
-	if op == "r" then
-		edit.replace(letter)
-		cache_command(false, num, op, true, 1, "", nil, nil)
+local function run_edit(num, op, letter)
+	if num < 1 then
+		bell.program_error("1 > num == " .. num)
+		return
+	end
+	if letter and #letter ~= 1 then
+		bell.program_error("1 ~= #letter == " .. #letter)
+		return
+	end
+
+	if op == "r" and letter then
+		edit.replace(num, letter)
+		cache_command(false, num, op, true, 1, "", letter)
 		undo_mode = true
 		return true
 	elseif op == "J" then
 		edit.join(num)
-		cache_command(false, num, op, true, 1, "", nil, nil)
+		cache_command(false, num, op, true, 1, "", nil)
 		undo_mode = true
 		return true
 	elseif op == ">>" then
 		edit.indent(num)
-		cache_command(false, num, op, true, 1, "", nil, nil)
+		cache_command(false, num, op, true, 1, "", nil)
 		undo_mode = true
 		return true
 	elseif op == "<<" then
 		edit.outdent(num)
-		cache_command(false, num, op, true, 1, "", nil, nil)
+		cache_command(false, num, op, true, 1, "", nil)
 		undo_mode = true
 		return true
 	end
@@ -420,16 +478,13 @@ local function run_edit(num, op, letter, replay)
 	return false
 end
 
-local function run_misc(num, op, letter, replay)
-	--
-	if op == ":" then
-		mode.prompt()
-		prompt.show()
-		return true
-	elseif op == "m" and letter then
-		mark.set(letter)
-		return true
-	elseif op == "." then
+local function run_misc(num, op, replay)
+	if num < 1 then
+		bell.program_error("1 > num == " .. num)
+		return
+	end
+
+	if op == "." then
 		repeat_command(num)
 		return true
 	elseif op == "u" then
@@ -448,6 +503,15 @@ local function run_misc(num, op, letter, replay)
 end
 
 local function get_region(num, no_subnum, subnum, mv, letter, save)
+	if num < 1 then
+		bell.program_error("1 > num == " .. num)
+		return
+	end
+	if letter and #letter ~= 1 then
+		bell.program_error("1 ~= #letter == " .. #letter)
+		return
+	end
+
 	local cursor = micro.CurPane().Buf:GetActiveCursor()
 	local saved_x, saved_y
 	if save ~= nil and save then
@@ -457,7 +521,10 @@ local function get_region(num, no_subnum, subnum, mv, letter, save)
 	local start_loc = buffer.Loc(cursor.X, cursor.Y)
 
 	for _ = 1, num do
-		run_move(no_subnum, subnum, mv, letter)
+		if not run_move(no_subnum, subnum, mv) and not run_mark("", mv, letter) then
+			bell.program_error("invalid mv == " .. mv)
+			return nil, nil
+		end
 	end
 
 	local end_loc = buffer.Loc(cursor.X, cursor.Y)
@@ -469,6 +536,15 @@ local function get_region(num, no_subnum, subnum, mv, letter, save)
 end
 
 local function run_compound_operator(num, op, no_subnum, subnum, mv, letter, replay)
+	if num < 1 then
+		bell.program_error("1 > num == " .. num)
+		return
+	end
+	if letter and #letter ~= 1 then
+		bell.program_error("1 ~= #letter == " .. #letter)
+		return
+	end
+
 	local matched = false
 
 	if op == "y" and mv == "$" then
@@ -488,6 +564,15 @@ local function run_compound_operator(num, op, no_subnum, subnum, mv, letter, rep
 		matched = true
 	elseif op == "c" and mv == "w" then
 		operator.change_word(num, replay)
+		matched = true
+	elseif op == "y" and mv == "W" then
+		operator.copy_loose_word(num)
+		matched = true
+	elseif op == "d" and mv == "W" then
+		operator.delete_loose_word(num)
+		matched = true
+	elseif op == "c" and mv == "W" then
+		operator.change_loose_word(num, replay)
 		matched = true
 	elseif op == "y" and (mv:match("[hl0wbnN]+") or mv == "`" and letter) then
 		local start_loc, end_loc = get_region(num, no_subnum, subnum, mv, letter)
@@ -524,7 +609,16 @@ local function run_compound_operator(num, op, no_subnum, subnum, mv, letter, rep
 	return false
 end
 
-local function run_compound_edit(num, op, no_subnum, subnum, mv, letter, replay)
+local function run_compound_edit(num, op, no_subnum, subnum, mv, letter)
+	if num < 1 then
+		bell.program_error("1 > num == " .. num)
+		return
+	end
+	if letter and #letter ~= 1 then
+		bell.program_error("1 ~= #letter == " .. #letter)
+		return
+	end
+
 	local matched = false
 
 	if op == ">" and (mv:match("[hl0wbnN]+") or mv == "`" and letter) then
@@ -554,14 +648,30 @@ local function run_compound_edit(num, op, no_subnum, subnum, mv, letter, replay)
 	return false
 end
 
-local function run(no_num, num, op, no_subnum, subnum, mv, letter, replay)
-	if run_compound_edit(num, op, no_subnum, subnum, mv, letter, replay) then
+-- Note: Declared as local far above.
+function run(no_num, num, op, no_subnum, subnum, mv, letter, replay)
+	if num < 1 then
+		bell.program_error("1 > num == " .. num)
+		return
+	end
+	if letter and #letter ~= 1 then
+		bell.program_error("1 ~= #letter == " .. #letter)
+		return
+	end
+
+	if op == ":" then
+		mode.prompt()
+		prompt.show()
+		return true
+	elseif run_compound_edit(num, op, no_subnum, subnum, mv, letter) then
 		return true
 	elseif run_compound_operator(num, op, no_subnum, subnum, mv, letter, replay) then
 		return true
-	elseif run_move(no_num, num, mv, letter) then
+	elseif run_view(op, mv) then -- view run_must preceeds run_move
 		return true
-	elseif run_view(op, mv) then
+	elseif run_move(no_num, num, mv) then
+		return true
+	elseif run_mark(op, mv, letter) then
 		return true
 	elseif run_search(mv, num) then
 		return true
@@ -571,9 +681,9 @@ local function run(no_num, num, op, no_subnum, subnum, mv, letter, replay)
 		return true
 	elseif run_operator(num, op, replay) then
 		return true
-	elseif run_edit(num, op, letter, replay) then
+	elseif run_edit(num, op, letter) then
 		return true
-	elseif run_misc(num, op, letter, replay) then
+	elseif run_misc(num, op, replay) then
 		return true
 	elseif mv == "g" then
 		move.by_word_for_change(num) -- XXX debug
@@ -582,6 +692,12 @@ local function run(no_num, num, op, no_subnum, subnum, mv, letter, replay)
 
 	return false
 end
+
+-------------
+-- Exports --
+-------------
+
+local M = {}
 
 M.run = run
 

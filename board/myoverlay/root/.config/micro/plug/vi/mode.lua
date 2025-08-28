@@ -1,16 +1,13 @@
-local M = {}
-
 local micro = import("micro")
 
 local config = import("micro/config")
-local plug_name = "vi"
-local plug_path = config.ConfigDir .. "/plug/" .. plug_name .. "/?.lua"
+local plug_path = config.ConfigDir .. "/plug/?.lua"
 if not package.path:find(plug_path, 1, true) then
 	package.path = package.path .. ";" .. plug_path
 end
 
-local bell = require("bell")
-local combuf = require("combuf")
+local bell = require("vi/bell")
+local combuf = require("vi/combuf")
 
 -- vi modes
 local MODE_COMMAND = 0
@@ -74,11 +71,17 @@ local function show()
 	elseif mode == MODE_INSERT then
 		mode_line = "vi insert mode"
 	else
-		bell.fatal("mode.show: invalid mode = " .. mode)
+		bell.program_error("invalid mode == " .. mode)
 		return
 	end
 	bell.info(mode_line .. " [" .. combuf.get() .. "]")
 end
+
+-------------
+-- Exports --
+-------------
+
+local M = {}
 
 M.command = command
 M.insert = insert

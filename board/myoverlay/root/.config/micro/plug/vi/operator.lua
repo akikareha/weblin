@@ -1,34 +1,37 @@
-local M = {}
+-- Operator Commands
 
 local micro = import("micro")
 local buffer = import("micro/buffer")
 local utf8 = import("unicode/utf8")
 
 local config = import("micro/config")
-local plug_name = "vi"
-local plug_path = config.ConfigDir .. "/plug/" .. plug_name .. "/?.lua"
+local plug_path = config.ConfigDir .. "/plug/?.lua"
 if not package.path:find(plug_path, 1, true) then
 	package.path = package.path .. ";" .. plug_path
 end
 
-local bell = require("bell")
-local mode = require("mode")
-local move = require("move")
-local insert = require("insert")
-local utils = require("utils")
+local utils = require("vi/utils")
+local bell = require("vi/bell")
+local mode = require("vi/mode")
+local snapshot = require("vi/snapshot")
+local move = require("vi/move")
+local insert = require("vi/insert")
 
 local kill_buffer = nil
 local kill_lines = nil
 
+--
 local function clear_kill_buffer()
 	kill_buffer = {}
 end
 
+--
 local function insert_killed_lines(lines)
 	table.insert(kill_buffer, lines)
 	kill_lines = true
 end
 
+--
 local function insert_killed_chars(chars)
 	table.insert(kill_buffer, chars)
 	kill_lines = false
@@ -38,8 +41,13 @@ end
 -- Copy (Yank)
 --
 
--- key: yy Y
+-- yy Y : Copy current line.
 local function copy_line(num)
+	if num < 1 then
+		bell.program_error("1 > num == " .. num)
+		return
+	end
+
 	mode.show()
 
 	local buf = micro.CurPane().Buf
@@ -57,12 +65,7 @@ local function copy_line(num)
 	end
 end
 
--- key: "<reg>yy
-local function copy_line_into_reg(reg, num)
-	bell.planned('"<reg>yy (operator.copy_line_into_reg)')
-end
-
--- key: y<mv>
+-- y<mv> : Copy region from current cursor to destination of motion <mv>.
 local function copy_region(start_loc, end_loc)
 	mode.show()
 
@@ -76,18 +79,7 @@ local function copy_region(start_loc, end_loc)
 	insert_killed_chars(substr)
 end
 
--- key: yw
-local function copy_word(num)
-	local cursor = micro.CurPane().Buf:GetActiveCursor()
-	local start_loc = buffer.Loc(cursor.X, cursor.Y)
-	move.by_word(num)
-	local end_loc = buffer.Loc(cursor.X, cursor.Y)
-	cursor.X = start_loc.X
-	cursor.Y = start_loc.Y
-	copy_region(start_loc, end_loc)
-end
-
--- key: y<mv>
+-- key: y<mv> : Copy line region from current cursor to destination of motion <mv>.
 local function copy_line_region(start_y, end_y)
 	if end_y < start_y then
 		start_y, end_y = end_y, start_y -- swap
@@ -99,7 +91,39 @@ local function copy_line_region(start_y, end_y)
 	copy_line(end_y - start_y + 1)
 end
 
--- key: y$
+-- yw : Copy word.
+local function copy_word(num)
+	if num < 1 then
+		bell.program_error("1 > num == " .. num)
+		return
+	end
+
+	local cursor = micro.CurPane().Buf:GetActiveCursor()
+	local start_loc = buffer.Loc(cursor.X, cursor.Y)
+	move.by_word(num)
+	local end_loc = buffer.Loc(cursor.X, cursor.Y)
+	cursor.X = start_loc.X
+	cursor.Y = start_loc.Y
+	copy_region(start_loc, end_loc)
+end
+
+-- yW : Copy loose word.
+local function copy_loose_word(num)
+	if num < 1 then
+		bell.program_error("1 > num == " .. num)
+		return
+	end
+
+	local cursor = micro.CurPane().Buf:GetActiveCursor()
+	local start_loc = buffer.Loc(cursor.X, cursor.Y)
+	move.by_loose_word(num)
+	local end_loc = buffer.Loc(cursor.X, cursor.Y)
+	cursor.X = start_loc.X
+	cursor.Y = start_loc.Y
+	copy_region(start_loc, end_loc)
+end
+
+-- y$ : Copy to end of current line.
 local function copy_to_end()
 	mode.show()
 
@@ -116,17 +140,36 @@ local function copy_to_end()
 	insert_killed_chars(line:sub(1 + cursor.X))
 end
 
+-- "<reg>yy : Copy current line into register <reg>.
+local function copy_line_into_reg(reg, num)
+	if num < 1 then
+		bell.program_error("1 > num == " .. num)
+		return
+	end
+
+	bell.planned('"<reg>yy (operator.copy_line_into_reg)')
+end
+
 --
 -- Paste (Put)
 --
 
--- key: p
+-- p : Paste after cursor.
 local function paste(num)
+	if num < 1 then
+		bell.program_error("1 > num == " .. num)
+		return
+	end
+
 	mode.show()
 
 	if not kill_buffer then
 		bell.vi_info("nothing to paste yet")
 		return
+	end
+
+	if not kill_lines then
+		snapshot.update()
 	end
 
 	local text
@@ -181,9 +224,18 @@ local function paste(num)
 	end)
 end
 
--- key: P
+-- P : Paste before cursor.
 local function paste_before(num)
+	if num < 1 then
+		bell.program_error("1 > num == " .. num)
+		return
+	end
+
 	mode.show()
+
+	if not kill_lines then
+		snapshot.update()
+	end
 
 	if not kill_buffer then
 		bell.vi_info("nothing to paste yet")
@@ -230,8 +282,13 @@ local function paste_before(num)
 	end)
 end
 
--- key: "<reg>p
+-- "<reg>p : Paste from register <reg>.
 local function paste_from_reg(reg, num)
+	if num < 1 then
+		bell.program_error("1 > num == " .. num)
+		return
+	end
+
 	bell.planned('"<reg>p (operator.paste_from_reg)')
 end
 
@@ -239,9 +296,16 @@ end
 -- Delete
 --
 
--- key: x
+-- x : Delete character under cursor.
 local function delete(num)
+	if num < 1 then
+		bell.program_error("1 > num == " .. num)
+		return
+	end
+
 	mode.show()
+
+	snapshot.update()
 
 	local pane = micro.CurPane()
 	local buf = pane.Buf
@@ -272,9 +336,16 @@ local function delete(num)
 	end)
 end
 
--- key: X
+-- X : Delete character before cursor.
 local function delete_before(num)
+	if num < 1 then
+		bell.program_error("1 > num == " .. num)
+		return
+	end
+
 	mode.show()
+
+	snapshot.update()
 
 	local pane = micro.CurPane()
 	local buf = pane.Buf
@@ -306,8 +377,13 @@ local function delete_before(num)
 	end)
 end
 
--- key: dd
+-- dd : Delete current line.
 local function delete_line(num)
+	if num < 1 then
+		bell.program_error("1 > num == " .. num)
+		return
+	end
+
 	mode.show()
 
 	local pane = micro.CurPane()
@@ -337,9 +413,11 @@ local function delete_line(num)
 	end)
 end
 
--- key: d
+-- d<mv> : Delete region from current cursor to destination of motion <mv>.
 local function delete_region(start_loc, end_loc)
 	mode.show()
+
+	snapshot.update()
 
 	if not utils.is_locs_ordered(start_loc, end_loc) then
 		start_loc, end_loc = end_loc, start_loc -- swap
@@ -360,18 +438,7 @@ local function delete_region(start_loc, end_loc)
 	end)
 end
 
--- key: dw
-local function delete_word(num)
-	local cursor = micro.CurPane().Buf:GetActiveCursor()
-	local loc_start = buffer.Loc(cursor.X, cursor.Y)
-	move.by_word(num)
-	local loc_end = buffer.Loc(cursor.X, cursor.Y)
-	cursor.X = loc_start.X
-	cursor.Y = loc_start.Y
-	delete_region(loc_start, loc_end)
-end
-
--- key: d
+-- d<mv> : Delete line region from current cursor to destination of motion <mv>.
 local function delete_line_region(start_y, end_y)
 	if end_y < start_y then
 		start_y, end_y = end_y, start_y -- swap
@@ -383,9 +450,47 @@ local function delete_line_region(start_y, end_y)
 	delete_line(end_y - start_y + 1)
 end
 
--- key: d$ D
+-- dw : Delete word.
+local function delete_word(num)
+	if num < 1 then
+		bell.program_error("1 > num == " .. num)
+		return
+	end
+
+	snapshot.update()
+
+	local cursor = micro.CurPane().Buf:GetActiveCursor()
+	local loc_start = buffer.Loc(cursor.X, cursor.Y)
+	move.by_word(num)
+	local loc_end = buffer.Loc(cursor.X, cursor.Y)
+	cursor.X = loc_start.X
+	cursor.Y = loc_start.Y
+	delete_region(loc_start, loc_end)
+end
+
+-- dW : Delete loose word.
+local function delete_loose_word(num)
+	if num < 1 then
+		bell.program_error("1 > num == " .. num)
+		return
+	end
+
+	snapshot.update()
+
+	local cursor = micro.CurPane().Buf:GetActiveCursor()
+	local loc_start = buffer.Loc(cursor.X, cursor.Y)
+	move.by_loose_word(num)
+	local loc_end = buffer.Loc(cursor.X, cursor.Y)
+	cursor.X = loc_start.X
+	cursor.Y = loc_start.Y
+	delete_region(loc_start, loc_end)
+end
+
+-- d$ D - Delete to end of current line.
 local function delete_to_end()
 	mode.show()
+
+	snapshot.update()
 
 	local buf = micro.CurPane().Buf
 	local cursor = buf:GetActiveCursor()
@@ -413,22 +518,31 @@ end
 -- Change / Substitute
 --
 
--- key: cc
+-- cc : Change current line.
 local function change_line(num, replay)
+	if num < 1 then
+		bell.program_error("1 > num == " .. num)
+		return
+	end
+
+	snapshot.update()
+
 	delete_line(num)
 	insert.open_here(1, replay)
 end
 
--- key: c<mv>
+-- c<mv> : Change region from current cursor to destination of motion <mv>.
 local function change_region(start_loc, end_loc, replay)
 	if not utils.is_locs_ordered(start_loc, end_loc) then
 		start_loc, end_loc = end_loc, start_loc -- swap
 	end
 
+	snapshot.update()
+
 	local buf = micro.CurPane().Buf
 	local line = buf:Line(end_loc.Y)
 	local length = utf8.RuneCount(line)
-	local end_of_line = end_loc.Y >= length
+	local end_of_line = end_loc.X >= length
 
 	delete_region(start_loc, end_loc)
 
@@ -444,9 +558,21 @@ local function change_region(start_loc, end_loc, replay)
 	end, 2)
 end
 
--- key: cw
--- XXX buggy
+-- c<mv> : Change line region from current cursor to destination of motion <mv>.
+local function change_line_region(start_y, end_y, replay)
+	delete_line_region(start_y, end_y)
+	insert.open_here(1, replay)
+end
+
+-- cw : Change word.
 local function change_word(num, replay)
+	if num < 1 then
+		bell.program_error("1 > num == " .. num)
+		return
+	end
+
+	snapshot.update()
+
 	local cursor = micro.CurPane().Buf:GetActiveCursor()
 	local loc_start = buffer.Loc(cursor.X, cursor.Y)
 	move.by_word_for_change(num)
@@ -456,20 +582,41 @@ local function change_word(num, replay)
 	change_region(loc_start, loc_end, replay)
 end
 
--- key: c<mv>
-local function change_line_region(start_y, end_y, replay)
-	delete_line_region(start_y, end_y)
-	insert.open_here(1, replay)
+-- cW : Change loose word.
+local function change_loose_word(num, replay)
+	if num < 1 then
+		bell.program_error("1 > num == " .. num)
+		return
+	end
+
+	snapshot.update()
+
+	local cursor = micro.CurPane().Buf:GetActiveCursor()
+	local loc_start = buffer.Loc(cursor.X, cursor.Y)
+	move.by_loose_word_for_change(num)
+	local loc_end = buffer.Loc(cursor.X, cursor.Y)
+	cursor.X = loc_start.X
+	cursor.Y = loc_start.Y
+	change_region(loc_start, loc_end, replay)
 end
 
--- key: C
+-- C : Change to end of current line.
 local function change_to_end(replay)
+	snapshot.update()
+
 	delete_to_end()
 	insert.after(1, replay)
 end
 
--- key: s
+-- s : Substitute one character under cursor.
 local function subst(num, replay)
+	if num < 1 then
+		bell.program_error("1 > num == " .. num)
+		return
+	end
+
+	snapshot.update()
+
 	insert.replace_mode()
 
 	local pane = micro.CurPane()
@@ -515,36 +662,56 @@ local function subst(num, replay)
 	end
 end
 
--- key: S
+-- S : Substtute current line (equals cc).
 local function subst_line(num, replay)
+	if num < 1 then
+		bell.program_error("1 > num == " .. num)
+		return
+	end
+
+	snapshot.update()
+
 	change_line(num, replay)
 end
 
+-------------
+-- Exports --
+-------------
+
+local M = {}
+
+-- internal use
 M.clear_kill_buffer = clear_kill_buffer
 --M.insert_killed_lines = insert_killed_lines
 M.insert_killed_chars = insert_killed_chars
 
 -- Copy (Yank)
 M.copy_word = copy_word
+M.copy_loose_word = copy_loose_word
 M.copy_line = copy_line
 M.copy_line_into_reg = copy_line_into_reg
 M.copy_region = copy_region
 M.copy_line_region = copy_line_region
 M.copy_to_end = copy_to_end
+
 -- Paste (Put)
 M.paste = paste
 M.paste_before = paste_before
 M.paste_from_rag = paste_from_reg
+
 -- Delete
 M.delete = delete
 M.delete_before = delete_before
 M.delete_word = delete_word
+M.delete_loose_word = delete_loose_word
 M.delete_line = delete_line
 M.delete_region = delete_region
 M.delete_line_region = delete_line_region
 M.delete_to_end = delete_to_end
+
 -- Change / Substitute
 M.change_word = change_word
+M.change_loose_word = change_loose_word
 M.change_line = change_line
 M.change_region = change_region
 M.change_line_region = change_line_region

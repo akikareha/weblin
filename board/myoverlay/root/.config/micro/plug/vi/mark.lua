@@ -1,20 +1,20 @@
-local M = {}
+-- Marking Commands
 
 local micro = import("micro")
 local buffer = import("micro/buffer")
 local utf8 = import("unicode/utf8")
 
 local config = import("micro/config")
-local plug_name = "vi"
-local plug_path = config.ConfigDir .. "/plug/" .. plug_name .. "/?.lua"
+local plug_path = config.ConfigDir .. "/plug/?.lua"
 if not package.path:find(plug_path, 1, true) then
 	package.path = package.path .. ";" .. plug_path
 end
 
-local bell = require("bell")
-local mode = require("mode")
-local move = require("move")
-local utils = require("utils")
+local utils = require("vi/utils")
+local bell = require("vi/bell")
+local mode = require("vi/mode")
+local context = require("vi/context")
+local move = require("vi/move")
 
 local marks = {}
 
@@ -22,8 +22,13 @@ local marks = {}
 -- Set Mark / Move to Mark
 --
 
--- key: m{letter}
+-- m<letter> : Mark current cursor position labelled by <letter>.
 local function set(letter)
+	if #letter ~= 1 then
+		bell.program_error("1 ~= #letter == " .. #letter)
+		return
+	end
+
 	mode.show()
 
 	local cursor = micro.CurPane().Buf:GetActiveCursor()
@@ -32,8 +37,13 @@ local function set(letter)
 	marks[letter] = loc
 end
 
--- key: `{letter}
+-- `<letter> : Move cursor to marked position labelled by <letter>.
 local function move_to(letter)
+	if #letter ~= 1 then
+		bell.program_error("1 ~= #letter == " .. #letter)
+		return
+	end
+
 	mode.show()
 
 	local loc = marks[letter]
@@ -41,6 +51,8 @@ local function move_to(letter)
 		bell.ring("no mark set for " .. letter)
 		return
 	end
+
+	context.memorize()
 
 	local buf = micro.CurPane().Buf
 	local cursor = buf:GetActiveCursor()
@@ -54,8 +66,13 @@ local function move_to(letter)
 	move.update_virtual_cursor()
 end
 
--- key: '{letter}
+-- '<letter> : Move cursor to marked line labelled by <letter>.
 local function move_to_line(letter)
+	if #letter ~= 1 then
+		bell.program_error("1 ~= #letter == " .. #letter)
+		return
+	end
+
 	mode.show()
 
 	local loc = marks[letter]
@@ -64,6 +81,8 @@ local function move_to_line(letter)
 		return
 	end
 
+	context.pre_memorize()
+
 	local cursor = micro.CurPane().Buf:GetActiveCursor()
 	local last_line_index = utils.last_line_index()
 	cursor.Y = math.min(loc.Y, last_line_index)
@@ -71,21 +90,41 @@ local function move_to_line(letter)
 	cursor.X = 0
 
 	move.update_virtual_cursor()
+
+	context.memorize()
 end
 
 --
 -- Move by Context
 --
 
--- key: ``
+-- `` : Move cursor to previous position in context.
 local function back()
-	bell.planned("`` (mark.back)")
+	mode.show()
+
+	if not context.return_by_chars() then
+		return
+	end
+
+	move.update_virtual_cursor()
 end
 
--- key: ''
+-- '' :  Move cursor to previous line in context.
 local function back_to_line()
-	bell.planned("'' (mark.back_to_line)")
+	mode.show()
+
+	if not context.return_by_lines() then
+		return
+	end
+
+	move.update_virtual_cursor()
 end
+
+-------------
+-- Exports --
+-------------
+
+local M = {}
 
 -- Set Mark / Move to Mark
 M.set = set

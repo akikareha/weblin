@@ -1,29 +1,79 @@
-local M = {}
+-- Editing Commands
 
 local micro = import("micro")
 local buffer = import("micro/buffer")
 local utf8 = import("unicode/utf8")
 
 local config = import("micro/config")
-local plug_name = "vi"
-local plug_path = config.ConfigDir .. "/plug/" .. plug_name .. "/?.lua"
+local plug_path = config.ConfigDir .. "/plug/?.lua"
 if not package.path:find(plug_path, 1, true) then
 	package.path = package.path .. ";" .. plug_path
 end
 
-local bell = require("bell")
-local mode = require("mode")
-local move = require("move")
-local utils = require("utils")
+local utils = require("vi/utils")
+local bell = require("vi/bell")
+local mode = require("vi/mode")
+local snapshot = require("vi/snapshot")
+local move = require("vi/move")
 
--- key: r
-local function replace(letter)
-	bell.planned("r (edit.replace)")
+-- r : Replace single character under cursor.
+local function replace(num, letter)
+	if num < 1 then
+		bell.program_error("1 > num == " .. num)
+		return
+	end
+	if utf8.RuneCount(letter) ~= 1 then
+		bell.program_error("1 ~= utif8.len(letter) == " .. #letter)
+		return
+	end
+
+	local buf = micro.CurPane().Buf
+	local cursor = buf:GetActiveCursor()
+	local line = buf:Line(cursor.Y)
+	local length = utf8.RuneCount(line)
+	if cursor.X + num > length then
+		bell.ring("line end exceeded")
+		return
+	end
+
+	mode.show()
+
+	snapshot.update()
+
+	local start_loc = buffer.Loc(cursor.X, cursor.Y)
+	local end_loc = buffer.Loc(cursor.X + num, cursor.Y)
+	buf:Remove(start_loc, end_loc)
+	local chars = {}
+	if letter == "\n" then
+		table.insert(chars, letter)
+	else
+		for _ = 1, num do
+			table.insert(chars, letter)
+		end
+	end
+	mode.insert()
+	buf:Insert(start_loc, table.concat(chars))
+	mode.command()
+
+	if letter == "\n" then
+		cursor.Y = end_loc.Y
+		cursor.X = 0
+	else
+		cursor.X = end_loc.X - 1
+	end
+	move.update_virtual_cursor()
 end
 
--- key: J
+-- J : Join current line with next line.
 local function join(num)
+	if num < 1 then
+		bell.program_error("1 > num == " .. num)
+		return
+	end
+
 	mode.show()
+
+	snapshot.update()
 
 	local pane = micro.CurPane()
 	local buf = pane.Buf
@@ -71,9 +121,17 @@ local function join(num)
 	end
 end
 
+-- internal use
 --
 local function indent_lines_internal(num, right)
+	if num < 1 then
+		bell.program_error("1 > num == " .. num)
+		return
+	end
+
 	mode.show()
+
+	snapshot.update()
 
 	local pane = micro.CurPane()
 	local buf = pane.Buf
@@ -109,18 +167,34 @@ local function indent_lines_internal(num, right)
 	mode.command()
 end
 
--- key: >>
+-- >> : Indent current line.
 local function indent(num)
+	if num < 1 then
+		bell.program_error("1 > num == " .. num)
+		return
+	end
+
 	indent_lines_internal(num, true)
 end
 
--- key: <<
+-- << : Outdent current line.
 local function outdent(num)
+	if num < 1 then
+		bell.program_error("1 > num == " .. num)
+		return
+	end
+
 	indent_lines_internal(num, false)
 end
 
+-- internal use
 --
 local function indent_region_internal(start_loc, end_loc, num, right)
+	if num < 1 then
+		bell.program_error("1 > num == " .. num)
+		return
+	end
+
 	if not utils.is_locs_ordered(start_loc, end_loc) then
 		start_loc, end_loc = end_loc, start_loc -- swap
 	end
@@ -129,15 +203,31 @@ local function indent_region_internal(start_loc, end_loc, num, right)
 	indent_lines_internal(num * n, right)
 end
 
--- key: ><mv>
+-- > <mv> : Indent region from current cursor to destination of motion <mv>.
 local function indent_region(start_loc, end_loc, num)
+	if num < 1 then
+		bell.program_error("1 > num == " .. num)
+		return
+	end
+
 	indent_region_internal(start_loc, end_loc, num, true)
 end
 
--- key: <<mv>
+--  < <mv> : Outdent region from current cursor to destination of motion <mv>.
 local function outdent_region(start_loc, end_loc, num)
+	if num < 1 then
+		bell.program_error("1 > num == " .. num)
+		return
+	end
+
 	indent_region_internal(start_loc, end_loc, num, false)
 end
+
+-------------
+-- Exports --
+-------------
+
+local M = {}
 
 M.replace = replace
 M.join = join

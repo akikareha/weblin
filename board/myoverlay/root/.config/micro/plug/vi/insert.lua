@@ -1,21 +1,20 @@
-local M = {}
+-- Insertion Commands
 
 local micro = import("micro")
 local buffer = import("micro/buffer")
 local utf8 = import("unicode/utf8")
-local time = import("time")
 
 local config = import("micro/config")
-local plug_name = "vi"
-local plug_path = config.ConfigDir .. "/plug/" .. plug_name .. "/?.lua"
+local plug_path = config.ConfigDir .. "/plug/?.lua"
 if not package.path:find(plug_path, 1, true) then
 	package.path = package.path .. ";" .. plug_path
 end
 
-local bell = require("bell")
-local mode = require("mode")
-local move = require("move")
-local utils = require("utils")
+local utils = require("vi/utils")
+local bell = require("vi/bell")
+local mode = require("vi/mode")
+local snapshot = require("vi/snapshot")
+local move = require("vi/move")
 
 local saved = false
 local saved_num = 1
@@ -30,6 +29,7 @@ local LINES_MODE = 2
 local REPLACE_MODE = 3
 local insert_mode = CHARS_MODE
 
+--
 local function size_with_linefeeds()
 	local buf = micro.CurPane().Buf
 	local linesnum = buf:LinesNum()
@@ -41,7 +41,13 @@ local function size_with_linefeeds()
 	return size
 end
 
+--
 local function save_state(num, replay)
+	if num < 1 then
+		bell.program_error("1 > num == " .. num)
+		return
+	end
+
 	saved = true
 	saved_num = num
 	saved_replay = replay
@@ -55,7 +61,13 @@ local function save_state(num, replay)
 	saved_size = size_with_linefeeds()
 end
 
+--
 local function extend(loc, num, replay)
+	if num < 1 then
+		bell.program_error("1 > num == " .. num)
+		return
+	end
+
 	local n
 	if replay then
 		n = num
@@ -95,7 +107,7 @@ local function extend(loc, num, replay)
 	elseif insert_mode == LINES_MODE then
 		buf:Insert(loc, table.concat(lines, "\n") .. "\n")
 	else
-		bell.fatal("insert.extend: invalid insert mode = " .. insert_mode)
+		bell.program_error("invalid insert_mode == " .. insert_mode)
 		return
 	end
 
@@ -108,6 +120,7 @@ local function extend(loc, num, replay)
 	move.update_virtual_cursor()
 end
 
+--
 local function resume(orig_loc)
 	if saved_loc then
 		local size = size_with_linefeeds()
@@ -157,14 +170,17 @@ local function resume(orig_loc)
 	end
 end
 
+--
 local function chars_mode()
 	insert_mode = CHARS_MODE
 end
 
+--
 local function lines_mode()
 	insert_mode = LINES_MODE
 end
 
+--
 local function replace_mode()
 	insert_mode = REPLACE_MODE
 end
@@ -173,8 +189,15 @@ end
 -- Enter Insert Mode
 --
 
--- key: i
+-- i : Switch to insert mode before cursor.
 local function before(num, replay)
+	if num < 1 then
+		bell.program_error("1 > num == " .. num)
+		return
+	end
+
+	snapshot.update()
+
 	chars_mode()
 
 	if replay then
@@ -189,8 +212,15 @@ local function before(num, replay)
 	end
 end
 
--- key: a
+-- a : Switch to insert mode after cursor.
 local function after(num, replay)
+	if num < 1 then
+		bell.program_error("1 > num == " .. num)
+		return
+	end
+
+	snapshot.update()
+
 	chars_mode()
 
 	local buf = micro.CurPane().Buf
@@ -210,8 +240,15 @@ local function after(num, replay)
 	end
 end
 
--- key: I
+-- I : Switch to insert mode before first non-blank character of current line.
 local function before_non_blank(num, replay)
+	if num < 1 then
+		bell.program_error("1 > num == " .. num)
+		return
+	end
+
+	snapshot.update()
+
 	chars_mode()
 
 	local buf = micro.CurPane().Buf
@@ -231,8 +268,15 @@ local function before_non_blank(num, replay)
 	end
 end
 
--- key: A
+-- A : Switch to insert mode after end of current line.
 local function after_end(num, replay)
+	if num < 1 then
+		bell.program_error("1 > num == " .. num)
+		return
+	end
+
+	snapshot.update()
+
 	chars_mode()
 
 	move.to_end()
@@ -254,8 +298,13 @@ local function after_end(num, replay)
 	end
 end
 
--- key: R
+-- R : Switch to replace (overwrite) mode.
 local function overwrite(num, replay)
+	if num < 1 then
+		bell.program_error("1 > num == " .. num)
+		return
+	end
+
 	bell.not_planned("R (insert.overwrite)")
 end
 
@@ -263,8 +312,13 @@ end
 -- Open Line
 --
 
--- key: o
+-- o : Open a new line below and switch to insert mode.
 local function open_below(num, replay)
+	if num < 1 then
+		bell.program_error("1 > num == " .. num)
+		return
+	end
+
 	lines_mode()
 
 	local buf = micro.CurPane().Buf
@@ -291,8 +345,13 @@ local function open_below(num, replay)
 	end
 end
 
--- key: O
+-- O : Open a new line **above** and switch to insert mode.
 local function open_above(num, replay)
+	if num < 1 then
+		bell.program_error("1 > num == " .. num)
+		return
+	end
+
 	lines_mode()
 
 	local buf = micro.CurPane().Buf
@@ -317,7 +376,16 @@ local function open_above(num, replay)
 	end
 end
 
+-- internal use
+-- (none) : Open a new line here and switch to insert mode.
 local function open_here(num, replay)
+	if num < 1 then
+		bell.program_error("1 > num == " .. num)
+		return
+	end
+
+	snapshot.update()
+
 	lines_mode()
 
 	local buf = micro.CurPane().Buf
@@ -342,7 +410,14 @@ local function open_here(num, replay)
 	end
 end
 
+-- internal use
+-- (none) : Switch to insert mode before cursor to be used by change commands.
 local function before_replace(num, replay)
+	if num < 1 then
+		bell.program_error("1 > num == " .. num)
+		return
+	end
+
 	replace_mode()
 
 	if replay then
@@ -357,7 +432,13 @@ local function before_replace(num, replay)
 	end
 end
 
---
+-------------
+-- Exports --
+-------------
+
+local M = {}
+
+-- internal use
 M.resume = resume
 M.extend = extend
 M.chars_mode = chars_mode
@@ -375,7 +456,7 @@ M.open_below = open_below
 M.open_above = open_above
 M.open_here = open_here
 
---
+-- internal use
 M.before_replace = before_replace
 
 return M

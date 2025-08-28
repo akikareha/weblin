@@ -1,24 +1,25 @@
-VERSION = "0.0.10"
+VERSION = "0.0.13"
 
 local micro = import("micro")
 local config = import("micro/config")
 local buffer = import("micro/buffer")
 local utf8 = import("unicode/utf8")
 
-local plug_name = "vi"
-local plug_path = config.ConfigDir .. "/plug/" .. plug_name .. "/?.lua"
+local plug_path = config.ConfigDir .. "/plug/?.lua"
 if not package.path:find(plug_path, 1, true) then
 	package.path = package.path .. ";" .. plug_path
 end
 
-local bell = require("bell")
-local mode = require("mode")
-local combuf = require("combuf")
-local prompt = require("prompt")
-local move = require("move")
-local insert = require("insert")
-local utils = require("utils")
+local utils = require("vi/utils")
+local bell = require("vi/bell")
+local mode = require("vi/mode")
+local combuf = require("vi/combuf")
+local prompt = require("vi/prompt")
+local context = require("vi/context")
+local move = require("vi/move")
+local insert = require("vi/insert")
 
+local memorized = false
 function Vi(_)
 	-- reset states
 	combuf.clear()
@@ -57,6 +58,12 @@ function Vi(_)
 	mode.show()
 
 	--
+	if not memorized then
+		context.memorize()
+		memorized = true
+	end
+
+	--
 	insert.resume(orig_loc)
 	return true
 end
@@ -77,7 +84,7 @@ function ViEnter(_)
 		prompt.enter()
 		return true
 	else
-		bell.fatal("ViEnter: invalid mode = " .. mode.code())
+		bell.program_error("invalid mode == " .. mode.code())
 		return false
 	end
 end
